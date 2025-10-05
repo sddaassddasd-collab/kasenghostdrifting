@@ -3,20 +3,17 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Panorama: Ghost in Scene (Decoupled from View)</title>
+<title>Panorama: Ghost in Scene (Works on all Pannellum)001</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
 <style>
   html,body{height:100%;margin:0;background:#000}
   #panorama{position:fixed;inset:0}
 
-  /* 注意：不要在 .ghost-hs 上設 transform，避免覆蓋 Pannellum 的定位 */
+  /* hotspot 外層（由 pannellum 建）—不要在這層動 transform */
   .ghost-hs{ pointer-events:none; z-index:30; }
-  /* 內層包一層做置中 */
-  .ghost-wrap{
-    transform: translate(-50%,-50%);
-    will-change: transform;
-  }
+  /* 內層做置中 */
+  .ghost-wrap{ transform:translate(-50%,-50%); will-change:transform; }
   .ghost-img{
     width:clamp(220px, 32vmin, 640px);
     filter:drop-shadow(0 10px 22px rgba(0,0,0,.55));
@@ -24,6 +21,7 @@
     user-select:none; -webkit-user-drag:none; pointer-events:none;
   }
 
+  /* 前景手機 */
   .holding-phone{
     position:fixed;left:50%;bottom:0;transform:translateX(-50%);
     height:70vh;width:auto;pointer-events:none;z-index:25;
@@ -78,6 +76,7 @@
 </div>
 
 <div class="end-wrap" id="endWrap">
+  <!-- Fallback 連結（整頁開啟） -->
   <a id="fallbackLink" class="end-btn" href="https://ths.li/nNKw9mg" target="_top" rel="noopener">
     去榕樹洞 / Go to the banyan tree hollow
   </a>
@@ -100,22 +99,19 @@
   const loading = document.getElementById('loading');
   viewer.on('load', () => {
     if (loading) loading.style.display = 'none';
-    setupGhostHotspot(); // panorama 載入完成後再建立
+    setupGhostHotspot(); // 全景就緒再建 hotspot
   });
 
-  /* ========= 2) 建立「幽靈」熱點 ========= */
+  /* ========= 2) 幽靈 hotspot：以「移除→重建」方式移動，保證重繪 ========= */
   let gyaw = 0, gpitch = 0;
   let ghostReady = false;
 
-  function setupGhostHotspot(){
-    gyaw = 0; gpitch = 0;
+  function addGhostAt(yaw, pitch){
     viewer.addHotSpot({
       id: 'ghostHS',
-      pitch: gpitch,
-      yaw: gyaw,
+      yaw, pitch,
       cssClass: 'ghost-hs',
-      createTooltipFunc: function (hotSpotDiv, args) {
-        // 內層包一層 wrapper，避免覆蓋掉 pannellum 的 transform
+      createTooltipFunc: (hotSpotDiv) => {
         const wrap = document.createElement('div');
         wrap.className = 'ghost-wrap';
         const img = document.createElement('img');
@@ -124,18 +120,28 @@
         wrap.appendChild(img);
         hotSpotDiv.appendChild(wrap);
         ghostReady = true;
-      },
-      createTooltipArgs: {}
+      }
     });
+  }
+
+  function setupGhostHotspot(){
+    gyaw = 0; gpitch = 0;
+    addGhostAt(gyaw, gpitch);
+  }
+
+  function moveGhostTo(yaw, pitch){
+    // 某些版本 updateHotSpot 不重繪，改為 remove → add
+    try { viewer.removeHotSpot('ghostHS'); } catch(e){}
+    addGhostAt(yaw, pitch);
   }
 
   function getGhostElement() {
     return document.querySelector('.ghost-hs');
   }
 
-  /* ========= 3) 幽靈在場景內均速亂走 ========= */
-  const SPEED_DEG_PER_SEC = 12;      // 每秒移動角度
-  const MIN_PITCH = -35, MAX_PITCH = 35;
+  /* ========= 3) 幽靈在全景內均速亂走 ========= */
+  const SPEED_DEG_PER_SEC = 12;              // 均速角速度（調小更慢，調大更快）
+  const MIN_PITCH = -35, MAX_PITCH = 35;     // 俯仰限制，避免跑到天頂/地面
 
   const wrapYaw = d => (d>180?d-360:d<-180?d+360:d);
   const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
@@ -156,7 +162,6 @@
     const dt = (t - lastT)/1000;
     lastT = t;
 
-    // 還沒建立好 DOM：持續等
     if (!ghostReady) { requestAnimationFrame(moveGhostRAF); return; }
     if (!target) target = randomTarget();
 
@@ -168,16 +173,13 @@
     if (dist <= step) {
       gyaw = wrapYaw(target.targetYaw);
       gpitch = clamp(target.targetPitch, MIN_PITCH, MAX_PITCH);
-      viewer.updateHotSpot('ghostHS', { yaw: gyaw, pitch: gpitch });
+      moveGhostTo(gyaw, gpitch);
       target = randomTarget();
     } else {
       gyaw = wrapYaw(gyaw + (dy/dist)*step);
       gpitch = clamp(gpitch + (dp/dist)*step, MIN_PITCH, MAX_PITCH);
-      viewer.updateHotSpot('ghostHS', { yaw: gyaw, pitch: gpitch });
+      moveGhostTo(gyaw, gpitch);
     }
-
-    // 某些情況保險起見，觸發一次重繪（用 setYaw(getYaw()) 小技巧）
-    viewer.setYaw(viewer.getYaw());
 
     requestAnimationFrame(moveGhostRAF);
   }
@@ -197,11 +199,9 @@
 
   startBtn.addEventListener('click', () => {
     intro.style.display = 'none';
-    // 啟動幽靈移動
     moving = true;
     lastT = performance.now();
     requestAnimationFrame(moveGhostRAF);
-    // 啟動碰撞偵測
     monitoring = true;
     requestAnimationFrame(tick);
   });
@@ -210,7 +210,7 @@
     endWrap.style.display = 'grid';
   });
 
-  // 你的指定導向法
+  // 指定的整頁跳轉法
   (function(){
     const targetURL = "https://ths.li/nNKw9mg";
     function replaceTop(url){
@@ -228,7 +228,7 @@
     });
   })();
 
-  /* ========= 5) 碰撞偵測（手機上緣掃到幽靈） ========= */
+  /* ========= 5) 碰撞偵測（手機上緣掃到幽靈投影） ========= */
   function tick(){
     if (!monitoring) return;
 
