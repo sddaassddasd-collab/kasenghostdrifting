@@ -3,42 +3,42 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Panorama: Ghost in Scene (Works on all Pannellum)001</title>
+<title>飄動幽靈全景</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
 <style>
-  html,body{height:100%;margin:0;background:#000}
-  #panorama{position:fixed;inset:0}
+  html,body{height:100%;margin:0;background:#000;overflow:hidden;}
+  #panorama{position:fixed;inset:0;}
 
-  /* hotspot 外層（由 pannellum 建）—不要在這層動 transform */
-  .ghost-hs{ pointer-events:none; z-index:30; }
-  /* 內層做置中 */
-  .ghost-wrap{ transform:translate(-50%,-50%); will-change:transform; }
-  .ghost-img{
-    width:clamp(220px, 32vmin, 640px);
-    filter:drop-shadow(0 10px 22px rgba(0,0,0,.55));
-    opacity:.88;
-    user-select:none; -webkit-user-drag:none; pointer-events:none;
+  /* 幽靈改為固定在螢幕上飄動，不受視角影響 */
+  #ghost{
+    position:fixed;
+    top:50%; left:50%;
+    width:clamp(250px,30vmin,600px);
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+    opacity:.9;
+    z-index:30;
+    animation: wander 60s linear infinite;
+  }
+  @keyframes wander{
+    0%   {transform:translate(0vw,0vh) scale(1);}
+    25%  {transform:translate(30vw, -10vh) scale(1.1);}
+    50%  {transform:translate(-25vw, 15vh) scale(0.9);}
+    75%  {transform:translate(20vw, 25vh) scale(1.05);}
+    100% {transform:translate(0vw,0vh) scale(1);}
   }
 
-  /* 前景手機 */
   .holding-phone{
     position:fixed;left:50%;bottom:0;transform:translateX(-50%);
     height:70vh;width:auto;pointer-events:none;z-index:25;
-    filter:drop-shadow(0 8px 18px rgba(0,0,0,.4));
   }
 
-  .loading{
+  .intro,.end-wrap{
     position:fixed;inset:0;display:grid;place-items:center;
-    color:#e2e8f0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans TC",sans-serif;
-    z-index:5;pointer-events:none;text-shadow:0 2px 6px rgba(0,0,0,.6);
-  }
-
-  .intro{
-    position:fixed;inset:0;background:rgba(0,0,0,.6);
-    display:grid;place-items:center;z-index:100;
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans TC",sans-serif;
   }
+  .intro{background:rgba(0,0,0,.6);z-index:100;}
   .intro-card{
     background:rgba(15,23,42,.9);color:#e2e8f0;border:1px solid rgba(255,255,255,.15);
     border-radius:16px;max-width:min(720px,92vw);padding:20px;box-shadow:0 8px 30px rgba(0,0,0,.5);
@@ -50,11 +50,7 @@
     background:#22c55e;color:#0b1220;font-weight:700;cursor:pointer;
   }
 
-  .end-wrap{
-    position:fixed;inset:0;display:none;place-items:center;z-index:110;
-    background:rgba(0,0,0,.45);
-    font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans TC",sans-serif;
-  }
+  .end-wrap{background:rgba(0,0,0,.45);display:none;z-index:110;}
   .end-btn{
     padding:1rem 1.3rem;border:0;border-radius:12px;background:#38bdf8;color:#0b1220;font-weight:800;cursor:pointer;
     box-shadow:0 10px 28px rgba(0,0,0,.45);
@@ -65,8 +61,6 @@
 <body>
 
 <div id="panorama"></div>
-<div class="loading" id="loading">載入全景中…</div>
-
 <div class="intro" id="intro">
   <div class="intro-card">
     <h2>拖曳螢幕，將手機對著女人，聽完對話。<br>Drag the screen, aim the phone at the woman, and listen to the conversation.</h2>
@@ -76,186 +70,75 @@
 </div>
 
 <div class="end-wrap" id="endWrap">
-  <!-- Fallback 連結（整頁開啟） -->
   <a id="fallbackLink" class="end-btn" href="https://ths.li/nNKw9mg" target="_top" rel="noopener">
     去榕樹洞 / Go to the banyan tree hollow
   </a>
 </div>
 
-<img src="holdingphone.png" alt="" class="holding-phone" id="holdingPhone" />
+<img src="ghost.png" id="ghost" alt="">
+<img src="holdingphone.png" class="holding-phone" id="holdingPhone" alt="">
 
 <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
 <script>
-  /* ========= 1) 建立全景 ========= */
-  const viewer = pannellum.viewer('panorama', {
-    type: 'equirectangular',
-    panorama: 'panorama.jpg',
-    autoLoad: true,
-    showControls: true,
-    hfov: 100,
-    backgroundColor: [0,0,0]
-  });
+const viewer = pannellum.viewer('panorama',{
+  type:'equirectangular',
+  panorama:'panorama.jpg',
+  autoLoad:true,
+  showControls:true,
+  hfov:100,
+  backgroundColor:[0,0,0]
+});
 
-  const loading = document.getElementById('loading');
-  viewer.on('load', () => {
-    if (loading) loading.style.display = 'none';
-    setupGhostHotspot(); // 全景就緒再建 hotspot
-  });
+const intro=document.getElementById('intro');
+const startBtn=document.getElementById('startBtn');
+const ghost=document.getElementById('ghost');
+const holding=document.getElementById('holdingPhone');
+const endWrap=document.getElementById('endWrap');
+const fallbackLink=document.getElementById('fallbackLink');
 
-  /* ========= 2) 幽靈 hotspot：以「移除→重建」方式移動，保證重繪 ========= */
-  let gyaw = 0, gpitch = 0;
-  let ghostReady = false;
+const audio=new Audio('ghostaudio.mp3');
+audio.preload='auto';
+audio.loop=false;
 
-  function addGhostAt(yaw, pitch){
-    viewer.addHotSpot({
-      id: 'ghostHS',
-      yaw, pitch,
-      cssClass: 'ghost-hs',
-      createTooltipFunc: (hotSpotDiv) => {
-        const wrap = document.createElement('div');
-        wrap.className = 'ghost-wrap';
-        const img = document.createElement('img');
-        img.src = 'ghost.png';
-        img.className = 'ghost-img';
-        wrap.appendChild(img);
-        hotSpotDiv.appendChild(wrap);
-        ghostReady = true;
-      }
-    });
-  }
+let monitoring=false;
 
-  function setupGhostHotspot(){
-    gyaw = 0; gpitch = 0;
-    addGhostAt(gyaw, gpitch);
-  }
+startBtn.onclick=()=>{
+  intro.style.display='none';
+  monitoring=true;
+  requestAnimationFrame(tick);
+};
 
-  function moveGhostTo(yaw, pitch){
-    // 某些版本 updateHotSpot 不重繪，改為 remove → add
-    try { viewer.removeHotSpot('ghostHS'); } catch(e){}
-    addGhostAt(yaw, pitch);
-  }
+audio.onended=()=>{ endWrap.style.display='grid'; };
 
-  function getGhostElement() {
-    return document.querySelector('.ghost-hs');
-  }
-
-  /* ========= 3) 幽靈在全景內均速亂走 ========= */
-  const SPEED_DEG_PER_SEC = 12;              // 均速角速度（調小更慢，調大更快）
-  const MIN_PITCH = -35, MAX_PITCH = 35;     // 俯仰限制，避免跑到天頂/地面
-
-  const wrapYaw = d => (d>180?d-360:d<-180?d+360:d);
-  const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
-  const shortestDelta = (a,b)=>wrapYaw(b-a);
-
-  function randomTarget(){
-    const targetYaw = wrapYaw(Math.random()*360 - 180);
-    const targetPitch = clamp(Math.random()*(MAX_PITCH-MIN_PITCH)+MIN_PITCH, MIN_PITCH, MAX_PITCH);
-    return {targetYaw, targetPitch};
-  }
-
-  let target = null;
-  let moving = false;
-  let lastT = 0;
-
-  function moveGhostRAF(t){
-    if (!moving) return;
-    const dt = (t - lastT)/1000;
-    lastT = t;
-
-    if (!ghostReady) { requestAnimationFrame(moveGhostRAF); return; }
-    if (!target) target = randomTarget();
-
-    const dy = shortestDelta(gyaw, target.targetYaw);
-    const dp = target.targetPitch - gpitch;
-    const dist = Math.hypot(dy, dp);
-    const step = SPEED_DEG_PER_SEC * dt;
-
-    if (dist <= step) {
-      gyaw = wrapYaw(target.targetYaw);
-      gpitch = clamp(target.targetPitch, MIN_PITCH, MAX_PITCH);
-      moveGhostTo(gyaw, gpitch);
-      target = randomTarget();
-    } else {
-      gyaw = wrapYaw(gyaw + (dy/dist)*step);
-      gpitch = clamp(gpitch + (dp/dist)*step, MIN_PITCH, MAX_PITCH);
-      moveGhostTo(gyaw, gpitch);
+(function(){
+  const targetURL="https://ths.li/nNKw9mg";
+  function replaceTop(url){
+    try{ window.top.location.replace(url); }
+    catch(err){
+      console.warn("Top navigation blocked:",err);
+      document.getElementById('fallbackLink').click();
     }
-
-    requestAnimationFrame(moveGhostRAF);
   }
-
-  /* ========= 4) 互動流程 ========= */
-  const intro = document.getElementById('intro');
-  const startBtn = document.getElementById('startBtn');
-  const holding = document.getElementById('holdingPhone');
-  const endWrap = document.getElementById('endWrap');
-  const fallbackLink = document.getElementById('fallbackLink');
-
-  const audio = new Audio('ghostaudio.mp3');
-  audio.preload = 'auto';
-  audio.loop = false;
-
-  let monitoring = false;
-
-  startBtn.addEventListener('click', () => {
-    intro.style.display = 'none';
-    moving = true;
-    lastT = performance.now();
-    requestAnimationFrame(moveGhostRAF);
-    monitoring = true;
-    requestAnimationFrame(tick);
+  fallbackLink.addEventListener('click',e=>{
+    e.preventDefault(); replaceTop(targetURL);
   });
+})();
 
-  audio.addEventListener('ended', () => {
-    endWrap.style.display = 'grid';
-  });
+function tick(){
+  if(!monitoring)return;
+  const gRect=ghost.getBoundingClientRect();
+  const pRect=holding.getBoundingClientRect();
+  const phoneTop=pRect.top;
+  const overlap=!(pRect.right<gRect.left||pRect.left>gRect.right);
+  const hit=overlap && phoneTop<=gRect.bottom && phoneTop>=gRect.top;
 
-  // 指定的整頁跳轉法
-  (function(){
-    const targetURL = "https://ths.li/nNKw9mg";
-    function replaceTop(url){
-      try {
-        window.top.location.replace(url);
-      } catch(err){
-        console.warn("Top navigation blocked:", err);
-        alert("此頁面被 sandbox 限制，無法取代整頁，請上層網站加入 allow-top-navigation-by-user-activation。");
-        document.getElementById('fallbackLink').click();
-      }
-    }
-    fallbackLink.addEventListener('click', function(e){
-      e.preventDefault();
-      replaceTop(targetURL);
-    });
-  })();
-
-  /* ========= 5) 碰撞偵測（手機上緣掃到幽靈投影） ========= */
-  function tick(){
-    if (!monitoring) return;
-
-    const ghostEl = getGhostElement();
-    if (ghostEl) {
-      const gRect = ghostEl.getBoundingClientRect();
-      const pRect = holding.getBoundingClientRect();
-      const phoneTop = pRect.top;
-
-      const horizontalOverlap = !(pRect.right < gRect.left || pRect.left > gRect.right);
-      const topHitsGhost = phoneTop <= gRect.bottom && phoneTop >= gRect.top;
-      const isColliding = horizontalOverlap && topHitsGhost;
-
-      if (isColliding) {
-        if (audio.paused && !audio.ended) {
-          audio.play().catch(()=>{});
-        }
-      } else {
-        if (!audio.paused && !audio.ended) {
-          audio.pause();
-        }
-      }
-    }
-    requestAnimationFrame(tick);
+  if(hit){
+    if(audio.paused&&!audio.ended){audio.play().catch(()=>{});}
+  }else{
+    if(!audio.paused&&!audio.ended){audio.pause();}
   }
+  requestAnimationFrame(tick);
+}
 </script>
-
-<noscript>需要啟用 JavaScript 才能檢視 360° 全景。</noscript>
 </body>
 </html>
