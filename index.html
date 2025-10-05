@@ -3,25 +3,25 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>飄動幽靈（反向拖曳 + 基礎飄移）</title>
+<title>幽靈：同向拖曳 + 漂移</title>
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
 <style>
   html,body{height:100%;margin:0;background:#000;overflow:hidden}
   #panorama{position:fixed;inset:0}
 
-  /* 幽靈放前景，用 CSS 變數控制位移（中心為 0,0） */
+  /* 幽靈在前景層，但壓在手機「下面」 */
   #ghost{
     position:fixed; left:50%; top:50%;
     transform: translate(calc(-50% + var(--gx, 0px)), calc(-50% + var(--gy, 0px)));
     width:clamp(250px, 30vmin, 600px);
     pointer-events:none; user-select:none; -webkit-user-drag:none;
-    opacity:.9; z-index:30;
+    opacity:.9; z-index:20; /* ← 比手機低，放在下面 */
     filter: drop-shadow(0 10px 22px rgba(0,0,0,.55));
     will-change: transform;
   }
 
-  /* 手持手機固定在中下，高度 70% 螢幕 */
+  /* 手機固定中下方，高度 70vh（在幽靈上面） */
   .holding-phone{
     position:fixed; left:50%; bottom:0; transform:translateX(-50%);
     height:70vh; width:auto; pointer-events:none; z-index:25;
@@ -76,9 +76,9 @@
   </a>
 </div>
 
-<!-- 前景素材 -->
+<!-- 前景素材（幽靈在下、手機在上） -->
 <img src="ghost.png" id="ghost" alt="">
-<img src="holdingphone.png" class="holding-phone" id="holdingPhone" alt="">
+<img src="holdingphone.png" class="holding-phone" id="holdingPhone" alt="phone">
 
 <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
 <script>
@@ -106,21 +106,21 @@ audio.preload = 'auto';
 audio.loop = false;
 
 /* ========= 4) 幽靈物理（螢幕座標） =========
-   ghost 的位置以 px 為單位，相對於畫面中心（0,0）
-   gx, gy: 目前位移；vb: 基礎飄移速度；拖曳時會把反向拖曳速度疊加上去
+   gx, gy: 目前位移；vb: 基礎飄移速度（px/s）
+   同方向拖曳：拖往哪，幽靈等速往哪
 */
 let gx = 0, gy = 0;
-let vb = { x: 20, y: 10 };           // 基礎飄移速度（px/s），可自行調整大小與方向
-let vbTarget = { x: 20, y: 10 };     // 每隔幾秒讓基礎速度慢慢變化
+let vb = { x: 20, y: 10 };           // 基礎飄移速度（px/s）
+let vbTarget = { x: 20, y: 10 };     // 隨機微調的目標速度
 let dragActive = false;
 let lastPointer = { x: 0, y: 0 };
 let monitoring = false;
 let lastT = 0;
 
-// 安全邊界，避免飄出畫面
+// 安全邊界（避免飄出視窗）：
 const marginVW = 8, marginVH = 8;
 
-/* 隨機更換基礎飄移方向（更自然） */
+/* 基礎飄移方向每 6 秒緩變一次（更自然） */
 setInterval(()=>{
   const speed = 20 + Math.random()*25; // 20~45 px/s
   const ang = Math.random()*Math.PI*2;
@@ -128,7 +128,7 @@ setInterval(()=>{
   vbTarget.y = Math.sin(ang)*speed;
 }, 6000);
 
-/* ========= 5) 反向拖曳：把指標位移量的「負號」加到幽靈 ========= */
+/* ========= 5) 同方向拖曳：把指標位移量「加」到幽靈 ========= */
 function onPointerDown(e){
   dragActive = true;
   lastPointer.x = e.clientX;
@@ -138,17 +138,16 @@ function onPointerMove(e){
   if(!dragActive) return;
   const dx = e.clientX - lastPointer.x;
   const dy = e.clientY - lastPointer.y;
-  // 反向，同速
-  gx -= dx;
-  gy -= dy;
+  // 同方向、同速度：
+  gx += dx;
+  gy += dy;
   lastPointer.x = e.clientX;
   lastPointer.y = e.clientY;
 }
 function onPointerUp(){ dragActive = false; }
 
-/* 同時支援滑鼠與觸控（Pointer Events） */
+/* 綁在 panorama 容器上，Pannellum 照常旋轉；我們同時取位移 */
 ['pointerdown','pointermove','pointerup','pointercancel','pointerleave'].forEach(type=>{
-  // 綁在 viewer 容器即可；Pannellum 仍會照常接收拖曳
   document.getElementById('panorama').addEventListener(type, (e)=>{
     if(type==='pointerdown') onPointerDown(e);
     else if(type==='pointermove') onPointerMove(e);
@@ -156,7 +155,7 @@ function onPointerUp(){ dragActive = false; }
   }, {passive:true});
 });
 
-/* ========= 6) 主迴圈：基礎飄移 + 反向拖曳後的位置，並做邊界限制 ========= */
+/* ========= 6) 主迴圈：基礎飄移 + 同向拖曳後的位置，並做邊界限制 ========= */
 function clampToViewport(){
   const vw = window.innerWidth, vh = window.innerHeight;
   const maxX = vw*(0.5 - marginVW/100);
@@ -173,7 +172,7 @@ function raf(t){
   if(!monitoring){ requestAnimationFrame(raf); return; }
   const dt = (t - (lastT||t))/1000; lastT = t;
 
-  // 慢慢把基礎速度逼近目標，製造微妙飄移變化
+  // 基礎速度緩逼近目標，帶出細膩飄移
   vb.x += (vbTarget.x - vb.x) * Math.min(1, dt*0.6);
   vb.y += (vbTarget.y - vb.y) * Math.min(1, dt*0.6);
 
@@ -183,11 +182,11 @@ function raf(t){
 
   clampToViewport();
 
-  // 透過 CSS 變數更新幽靈位置
+  // 更新幽靈位置
   ghost.style.setProperty('--gx', gx + 'px');
   ghost.style.setProperty('--gy', gy + 'px');
 
-  // 碰撞偵測（手機上緣掃到幽靈）
+  // 碰撞：手機「上緣」掃到幽靈就播放
   const gRect = ghost.getBoundingClientRect();
   const pRect = phone.getBoundingClientRect();
   const phoneTop = pRect.top;
@@ -208,13 +207,14 @@ startBtn.addEventListener('click', ()=>{
   intro.style.display = 'none';
   monitoring = true;
   lastT = performance.now();
+  requestAnimationFrame(raf);
 });
 
 audio.addEventListener('ended', ()=>{
   endWrap.style.display = 'grid';
 });
 
-/* 指定整頁跳轉（含 sandbox fallback） */
+/* 整頁跳轉（含 sandbox fallback） */
 (function(){
   const targetURL = "https://ths.li/nNKw9mg";
   function replaceTop(url){
@@ -229,8 +229,12 @@ audio.addEventListener('ended', ()=>{
   });
 })();
 
-/* 啟動 RAF（直到按下「知道了」才開始進入計算分支） */
-requestAnimationFrame(raf);
+/* 視窗尺寸變化時做一次邊界檢查 */
+window.addEventListener('resize', ()=>{
+  clampToViewport();
+  ghost.style.setProperty('--gx', gx + 'px');
+  ghost.style.setProperty('--gy', gy + 'px');
+});
 </script>
 
 <noscript>需要啟用 JavaScript 才能檢視 360° 全景。</noscript>
